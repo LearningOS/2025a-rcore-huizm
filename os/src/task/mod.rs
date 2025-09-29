@@ -14,7 +14,7 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
-use crate::config::MAX_APP_NUM;
+use crate::config::{MAX_APP_NUM, MAX_SYSCALL_NUM};
 use crate::loader::{get_num_app, init_app_cx};
 use crate::sync::UPSafeCell;
 use lazy_static::*;
@@ -54,6 +54,7 @@ lazy_static! {
         let mut tasks = [TaskControlBlock {
             task_cx: TaskContext::zero_init(),
             task_status: TaskStatus::UnInit,
+            task_syscall_times: [0; MAX_SYSCALL_NUM],
         }; MAX_APP_NUM];
         for (i, task) in tasks.iter_mut().enumerate() {
             task.task_cx = TaskContext::goto_restore(init_app_cx(i));
@@ -135,6 +136,36 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+
+    fn get_current_task(&self) -> usize {
+        let inner = self.inner.exclusive_access();
+        inner.current_task
+    }
+
+    fn get_task_syscall_time(&self, id: usize, syscall: usize) -> u32 {
+        let inner = self.inner.exclusive_access();
+        inner.tasks[id].task_syscall_times[syscall]
+    }
+
+    fn increment_task_syscall_time(&self, id: usize, syscall: usize) {
+        let mut inner = self.inner.exclusive_access();
+        inner.tasks[id].task_syscall_times[syscall] += 1;
+    }
+}
+
+/// Get current task id
+pub fn get_current_task() -> usize {
+    TASK_MANAGER.get_current_task()
+}
+
+/// Get task syscall time
+pub fn get_task_syscall_time(id: usize, syscall: usize) -> u32 {
+    TASK_MANAGER.get_task_syscall_time(id, syscall)
+}
+
+/// Increment task syscall time
+pub fn increment_task_syscall_time(id: usize, syscall: usize) {
+    TASK_MANAGER.increment_task_syscall_time(id, syscall);
 }
 
 /// Run the first task in task list.
