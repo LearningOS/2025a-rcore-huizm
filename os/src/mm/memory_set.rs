@@ -262,6 +262,16 @@ impl MemorySet {
             false
         }
     }
+
+    /// check if `vpn` in areas
+    pub fn is_vpn_available(&self, vpn: VirtPageNum) -> bool {
+        for area in &self.areas {
+            if area.vpn_range.into_iter().find(|v| *v == vpn).is_some() {
+                return true;
+            };
+        };
+        false
+    }
 }
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {
@@ -376,6 +386,13 @@ bitflags! {
         const X = 1 << 3;
         ///Accessible in U mode
         const U = 1 << 4;
+    }
+}
+
+impl MapPermission {
+    /// Init MapPermission
+    pub fn new(bits: u8) -> Self {
+        Self { bits }
     }
 }
 

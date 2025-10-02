@@ -22,6 +22,7 @@ use lazy_static::*;
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
 
+use crate::mm::{MapPermission, VirtAddr, VirtPageNum};
 pub use context::TaskContext;
 
 /// The task manager, where all the tasks are managed.
@@ -153,6 +154,87 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+
+    fn get_current_task(&self) -> usize {
+        let inner = self.inner.exclusive_access();
+        inner.current_task
+    }
+
+    fn get_task_syscall_time(&self, id: usize, syscall: usize) -> u32 {
+        let inner = self.inner.exclusive_access();
+        inner.tasks[id].task_syscall_times[syscall]
+    }
+
+    fn increment_task_syscall_time(&self, id: usize, syscall: usize) {
+        let mut inner = self.inner.exclusive_access();
+        inner.tasks[id].task_syscall_times[syscall] += 1;
+    }
+
+    fn task_alloc_mem(
+        &self,
+        id: usize,
+        start_va: VirtAddr,
+        end_va: VirtAddr,
+        permission: MapPermission,
+    ) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        inner.tasks[id]
+            .memory_set
+            .insert_framed_area(start_va, end_va, permission);
+        0
+    }
+
+    fn task_dealloc_mem(&self, id: usize, start_va: VirtAddr) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let memset = &mut inner.tasks[id].memory_set;
+
+        match memset.shrink_to(start_va, start_va) {
+            true => 0,
+            false => -1,
+        }
+    }
+
+    fn is_vpn_available(&self, id: usize, vpn: VirtPageNum) -> bool {
+        let inner = self.inner.exclusive_access();
+        let memset = &inner.tasks[id].memory_set;
+
+        memset.is_vpn_available(vpn)
+    }
+}
+
+/// Get current task id
+pub fn get_current_task() -> usize {
+    TASK_MANAGER.get_current_task()
+}
+
+/// Get task syscall time
+pub fn get_task_syscall_time(id: usize, syscall: usize) -> u32 {
+    TASK_MANAGER.get_task_syscall_time(id, syscall)
+}
+
+/// Increment task syscall time
+pub fn increment_task_syscall_time(id: usize, syscall: usize) {
+    TASK_MANAGER.increment_task_syscall_time(id, syscall);
+}
+
+/// Task allocate memory
+pub fn task_alloc_mem(
+    id: usize,
+    start_va: VirtAddr,
+    end_va: VirtAddr,
+    permission: MapPermission,
+) -> isize {
+    TASK_MANAGER.task_alloc_mem(id, start_va, end_va, permission)
+}
+
+/// Task deallocate memory
+pub fn task_dealloc_mem(id: usize, start_va: VirtAddr) -> isize {
+    TASK_MANAGER.task_dealloc_mem(id, start_va)
+}
+
+/// Task check if vpn available
+pub fn is_vpn_available(id: usize, vpn: VirtPageNum) -> bool {
+    TASK_MANAGER.is_vpn_available(id, vpn)
 }
 
 /// Run the first task in task list.
