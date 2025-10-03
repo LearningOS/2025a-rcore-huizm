@@ -71,6 +71,12 @@ pub struct TaskControlBlockInner {
 
     /// Program break
     pub program_brk: usize,
+
+    /// Task stride
+    pub stride: isize,
+
+    /// Task priority
+    pub prio: isize,
 }
 
 impl TaskControlBlockInner {
@@ -135,6 +141,8 @@ impl TaskControlBlock {
                     ],
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    stride: 0,
+                    prio: 16,
                 })
             },
         };
@@ -216,6 +224,8 @@ impl TaskControlBlock {
                     fd_table: new_fd_table,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    stride: parent_inner.stride,
+                    prio: parent_inner.prio,
                 })
             },
         });
@@ -261,6 +271,19 @@ impl TaskControlBlock {
             None
         }
     }
+}
+
+/// Spawn a new task from the given ELF data.
+pub fn spawn(this: &Arc<TaskControlBlock>, elf_data: &[u8]) -> Arc<TaskControlBlock> {
+    let mut inner = this.inner_exclusive_access();
+    let child = Arc::new(TaskControlBlock::new(elf_data));
+
+    let mut child_inner = child.inner_exclusive_access();
+    child_inner.parent = Some(Arc::downgrade(this));
+    inner.children.push(child.clone());
+    drop(child_inner);
+
+    child
 }
 
 #[derive(Copy, Clone, PartialEq)]

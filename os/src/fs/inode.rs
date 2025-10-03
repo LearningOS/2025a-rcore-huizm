@@ -4,14 +4,15 @@
 //!
 //! `UPSafeCell<OSInodeInner>` -> `OSInode`: for static `ROOT_INODE`,we
 //! need to wrap `OSInodeInner` into `UPSafeCell`
-use super::File;
+use super::{File, StatMode};
 use crate::drivers::BLOCK_DEVICE;
 use crate::mm::UserBuffer;
 use crate::sync::UPSafeCell;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use bitflags::*;
-use easy_fs::{EasyFileSystem, Inode};
+use core::any::Any;
+use easy_fs::{DiskInodeType, EasyFileSystem, Inode};
 use lazy_static::*;
 
 /// inode in memory
@@ -52,6 +53,26 @@ impl OSInode {
             v.extend_from_slice(&buffer[..len]);
         }
         v
+    }
+    /// Get the inode type (directory or file)
+    pub fn get_inode_type(&self) -> StatMode {
+        let inner = self.inner.exclusive_access();
+        match inner.inode.get_inode_type() {
+            DiskInodeType::Directory => StatMode::DIR,
+            DiskInodeType::File => StatMode::FILE,
+        }
+    }
+    /// Get the inode ID
+    pub fn get_inode_id(&self) -> u32 {
+        let inner = self.inner.exclusive_access();
+
+        let (block_id, block_offset) = inner.inode.get_block_loc();
+        ROOT_INODE.get_inode_id_by_block_loc(block_id as u32, block_offset)
+    }
+    /// Get the number of hard links to this inode
+    pub fn get_nlink(&self) -> u32 {
+        let inode_id = self.get_inode_id();
+        ROOT_INODE.nlink(inode_id)
     }
 }
 
@@ -125,6 +146,21 @@ pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
     }
 }
 
+/// Create a hard link
+pub fn linkat(old_name: &str, new_name: &str) -> isize {
+    if let Some(inode_id) = ROOT_INODE.get_inode_id(old_name) {
+        ROOT_INODE.create_dirent(new_name, inode_id);
+        0
+    } else {
+        -1
+    }
+}
+
+/// Remove a hard link
+pub fn unlinkat(name: &str) -> isize {
+    ROOT_INODE.unlink(name)
+}
+
 impl File for OSInode {
     fn readable(&self) -> bool {
         self.readable
@@ -155,5 +191,8 @@ impl File for OSInode {
             total_write_size += write_size;
         }
         total_write_size
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
