@@ -7,7 +7,7 @@ use super::{add_task, SignalFlags};
 use super::{pid_alloc, PidHandle};
 use crate::fs::{File, Stdin, Stdout};
 use crate::mm::{translated_refmut, MemorySet, KERNEL_SPACE};
-use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell};
+use crate::sync::{Condvar, Mutex, Semaphore, UPSafeCell, Bankers};
 use crate::trap::{trap_handler, TrapContext};
 use alloc::string::String;
 use alloc::sync::{Arc, Weak};
@@ -49,6 +49,12 @@ pub struct ProcessControlBlockInner {
     pub semaphore_list: Vec<Option<Arc<Semaphore>>>,
     /// condvar list
     pub condvar_list: Vec<Option<Arc<Condvar>>>,
+    /// mutex banker
+    pub mutex_banker: Bankers,
+    /// sem banker
+    pub sem_banker: Bankers,
+    /// is deadlock detect enabled
+    pub is_deadlock_detect_enabled: bool,
 }
 
 impl ProcessControlBlockInner {
@@ -81,6 +87,42 @@ impl ProcessControlBlockInner {
     /// get a task with tid in this process
     pub fn get_task(&self, tid: usize) -> Arc<TaskControlBlock> {
         self.tasks[tid].as_ref().unwrap().clone()
+    }
+
+    pub fn increase_mutex(&mut self, rid: usize, num: usize) {
+        self.mutex_banker.increase_resource(rid, num)
+    }
+
+    pub fn increase_sem(&mut self, rid: usize, num: usize) {
+        self.sem_banker.increase_resource(rid, num)
+    }
+
+    pub fn is_mutex_safe(&mut self, tid: usize, rid: usize) -> Option<bool> {
+        self.mutex_banker.is_safe(tid, rid, self.is_deadlock_detect_enabled)
+    }
+
+    pub fn is_sem_safe(&mut self, tid: usize, rid: usize) -> Option<bool> {
+        self.sem_banker.is_safe(tid, rid, self.is_deadlock_detect_enabled)
+    }
+
+    pub fn mutex_request_grant(&mut self, tid: usize) {
+        self.mutex_banker.request_grant(tid)
+    }
+
+    pub fn sem_request_grant(&mut self, tid: usize) {
+        self.sem_banker.request_grant(tid)
+    }
+
+    pub fn release_mutex(&mut self, tid: usize, rid: usize) {
+        self.mutex_banker.release_resource(tid, rid)
+    }
+
+    pub fn release_sem(&mut self, tid: usize, rid: usize) {
+        self.sem_banker.release_resource(tid, rid)
+    }
+
+    pub fn set_deadlock_detect(&mut self, enabled: bool) {
+        self.is_deadlock_detect_enabled = enabled;
     }
 }
 
@@ -119,6 +161,9 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    mutex_banker: Bankers::new(),
+                    sem_banker: Bankers::new(),
+                    is_deadlock_detect_enabled: false,
                 })
             },
         });
@@ -245,6 +290,9 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    mutex_banker: Bankers::new(),
+                    sem_banker: Bankers::new(),
+                    is_deadlock_detect_enabled: false,
                 })
             },
         });

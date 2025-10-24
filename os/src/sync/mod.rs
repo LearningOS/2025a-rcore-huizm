@@ -1,10 +1,12 @@
 //! Synchronization and interior mutability primitives
 
+mod banker;
 mod condvar;
 mod mutex;
 mod semaphore;
 mod up;
 
+pub use banker::Bankers;
 pub use condvar::Condvar;
 pub use mutex::{Mutex, MutexBlocking, MutexSpin};
 pub use semaphore::Semaphore;
